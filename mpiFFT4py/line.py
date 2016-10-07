@@ -171,6 +171,34 @@ class R2C(object):
         fu[:] = fp[:, :self.Nf]
         return fu
 
+    def rfftx(self, u, fu):
+        """Real fft along x, not parallelized"""
+        Uc_hatT = rfft(u, fu, axis=1, threads=self.threads, planner_effort=self.planner_effort['rfft'])
+        return Uc_hatT
+
+    def ffty(self, Uc_hatT, fu):
+
+        if self.num_processes == 1:
+            fu = fft(Uc_hatT, fu, axis=0, threads=self.threads, planner_effort=self.planner_effort['fft'])
+        else:
+            # Work arrays
+            U_send  = self.work_arrays[((self.num_processes, self.Np[0], self.Np[1]//2), self.complex, 0)]
+            U_sendr = U_send.reshape((self.N[0], self.Np[1]//2))
+            Uc = self.work_arrays[((self.N[0], self.Np[1]//2), self.complex, 0)]
+            plane_recv = self.work_arrays[((self.Np[0],), self.complex, 2)]
+
+            Uc_hatT[:, 0] += 1j*Uc_hatT[:, -1]
+
+            U_send = transpose_x(U_send, Uc_hatT, self.num_processes)
+
+            # Communicate all values
+            self.comm.Alltoall(MPI.IN_PLACE, [U_send, self.mpitype])
+
+            Uc = fft(U_sendr, Uc, axis=0, threads=self.threads, planner_effort=self.planner_effort['fft'])
+            fu[:, :self.Np[1]//2] = Uc
+
+        return fu
+
     def fft2(self, u, fu, dealias=None):
         assert dealias in ('3/2-rule', '2/3-rule', 'None', None)
 
