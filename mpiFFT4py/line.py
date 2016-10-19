@@ -185,7 +185,6 @@ class R2C(object):
             U_send  = self.work_arrays[((self.num_processes, self.Np[0], self.Np[1]//2), self.complex, 0)]
             U_sendr = U_send.reshape((self.N[0], self.Np[1]//2))
             Uc = self.work_arrays[((self.N[0], self.Np[1]//2), self.complex, 0)]
-            plane_recv = self.work_arrays[((self.Np[0],), self.complex, 2)]
 
             Uc_hatT[:, 0] += 1j*Uc_hatT[:, -1]
 
@@ -198,6 +197,40 @@ class R2C(object):
             fu[:, :self.Np[1]//2] = Uc
 
         return fu
+
+    def iffty(self, fu, Uc_hatT):
+        """Inverse fft along y with MPI"""
+        if self.num_processes == 1:
+            Uc_hatT = ifft(fu, Uc_hatT, axis=0, threads=self.threads, planner_effort=self.planner_effort['ifft'])
+        else:
+
+            # Get some work arrays
+            Uc_hat  = self.work_arrays[((self.N[0], self.Npf), self.complex, 0)]
+            Uc_hatT = self.work_arrays[((self.Np[0], self.Nf), self.complex, 0)]
+            U_send  = self.work_arrays[((self.num_processes, self.Np[0], self.Np[1]//2), self.complex, 0)]
+            U_sendr = U_send.reshape((self.N[0], self.Np[1]//2))
+            fft_y = self.work_arrays[((self.N[0],), self.complex, 0)]
+            plane_recv = self.work_arrays[((self.Np[0],), self.complex, 2)]
+
+            Uc_hat = ifft(fu, Uc_hat, axis=0, threads=self.threads, planner_effort=self.planner_effort['ifft'])
+            U_sendr[:] = Uc_hat[:, :self.Np[1]//2]
+
+            self.comm.Alltoall(MPI.IN_PLACE, [U_send, self.mpitype])
+
+            Uc_hatT = transpose_y(Uc_hatT, U_sendr, self.num_processes)
+
+            if self.rank == self.num_processes-1:
+                fft_y[:] = Uc_hat[:, -1]
+
+            self.comm.Scatter(fft_y, plane_recv, root=self.num_processes-1)
+            Uc_hatT[:, -1] = plane_recv
+
+        return Uc_hatT
+
+    def irfftx(self, Uc_hatT, u):
+        """Inverse fft along x"""
+        u = irfft(Uc_hatT, u, axis=1, threads=self.threads, planner_effort=self.planner_effort['irfft'])
+        return u
 
     def fft2(self, u, fu, dealias=None):
         assert dealias in ('3/2-rule', '2/3-rule', 'None', None)
