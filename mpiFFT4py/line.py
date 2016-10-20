@@ -206,7 +206,6 @@ class R2C(object):
 
             # Get some work arrays
             Uc_hat  = self.work_arrays[((self.N[0], self.Npf), self.complex, 0)]
-            Uc_hatT = self.work_arrays[((self.Np[0], self.Nf), self.complex, 0)]
             U_send  = self.work_arrays[((self.num_processes, self.Np[0], self.Np[1]//2), self.complex, 0)]
             U_sendr = U_send.reshape((self.N[0], self.Np[1]//2))
             fft_y = self.work_arrays[((self.N[0],), self.complex, 0)]
